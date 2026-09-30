@@ -1,0 +1,132 @@
+# ============================================================
+# Kimia — .gitignore
+# ============================================================
+
+# ---------- Python / Backend ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environnements virtuels
+.venv/
+venv/
+ENV/
+env/
+.venv*/
+.python-version
+
+# Tests / couverture
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Linters / formatters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.flake8
+.pytype/
+
+# ---------- Variables d'environnement ----------
+.env
+.env.*
+!.env.example
+*.env
+
+# ---------- Base de données locale ----------
+*.sqlite3
+*.db
+*.sqlite
+
+# ---------- Alembic ----------
+# (ne PAS ignorer les migrations !)
+# backend/alembic/versions/*.py  ← à garder versionné
+
+# ---------- Stockage des fichiers uploadés ----------
+storage/
+!storage/.gitkeep
+
+# ---------- Logs ----------
+*.log
+logs/
+*.pid
+*.seed
+
+# ---------- Node / Frontend ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+
+# Build frontend (si tu ajoutes un bundler plus tard)
+frontend/**/dist/
+frontend/**/build/
+
+# ---------- IDE / Éditeurs ----------
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+nbproject/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# ---------- OS ----------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---------- Archives / zips ----------
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ---------- Divers ----------
+*.bak
+*.tmp
+*.temp
+.cache/
+.temp/
+tmp/

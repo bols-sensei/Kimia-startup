@@ -1,0 +1,13 @@
+# Versions minimales réellement testées (septembre 2026) ; les versions plus récentes compatibles sont acceptées.
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+psycopg2-binary
+pydantic[email]
+pydantic-settings
+python-jose[cryptography]
+argon2-cffi
+python-multipart
+websockets
+python-dotenv

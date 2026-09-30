@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Connexion — Kimia</title>
+  <meta name="theme-color" content="#0A0A0A">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/app.css">
+  <script src="../assets/js/config.js"></script>
+</head>
+<body>
+  <main class="login-page">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">K</div>
+        <h1 class="login-title">Connexion</h1>
+        <p class="login-subtitle">Accès réservé à l'équipe Kimia</p>
+      </div>
+
+      <form class="form" id="login-form" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" required autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Mot de passe</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="login-error hidden" id="login-error" role="alert"></div>
+        <button type="submit" class="btn btn-primary" id="submit-btn" style="width:100%">
+          Se connecter
+        </button>
+      </form>
+
+      <p class="login-footer">
+        Pas de compte ? Contactez le CEO.
+      </p>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api, session } from "./services/api.js";
+
+    if (session.token) location.replace("index.html");
+
+    const $ = (s) => document.querySelector(s);
+
+    $("#login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = $("#login-error");
+      const btn = $("#submit-btn");
+      err.classList.add("hidden");
+
+      const email = $("#email").value.trim();
+      const password = $("#password").value;
+
+      if (!email || !password) {
+        err.textContent = "Saisissez votre email et votre mot de passe.";
+        err.classList.remove("hidden");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Connexion…";
+
+      try {
+        const r = await api.login(email, password);
+        session.save(r.access_token, r.user);
+        location.replace("index.html");
+      } catch (ex) {
+        err.textContent = ex.message || "Identifiants invalides";
+        err.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Se connecter";
+      }
+    });
+  </script>
+</body>
+</html>
