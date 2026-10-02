@@ -12,7 +12,6 @@ from app.schemas.content import PortfolioItemRead
 from app.core.notifications import notify_staff
 from app.core.ws_manager import manager
 from app.database import get_db
-from app.models import Category, Client, EventType, Request, Service
 from app.schemas.business import (
     CategoryRead,
     EventTypeRead,
@@ -108,8 +107,21 @@ def submit_request(payload: PublicRequestCreate, db: Session = Depends(get_db)):
         event_location=event_location,
     )
     db.add(demande)
+    db.flush()
+
+    # Prévenir le staff (CEO + DA) et rafraîchir les écrans en temps réel
+    notify_staff(
+        db,
+        notif_type="request.new",
+        title="Nouvelle demande",
+        message=f"{client.name} a envoyé la demande {reference}.",
+    )
     db.commit()
     db.refresh(demande)
+
+    manager.broadcast_sync({"type": "request.created", "data": {"id": demande.id, "reference": reference}})
+    return demande
+
 
 @router.get("/portfolio", response_model=list[PortfolioItemRead])
 def list_portfolio(db: Session = Depends(get_db)):

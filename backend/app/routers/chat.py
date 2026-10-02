@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user, require_permission, user_can
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import (
@@ -66,7 +66,7 @@ def _can_access(channel: Channel, user: User, db: Session) -> bool:
         return True
 
     # Canal projet : CEO/DA toujours, CM si assigné au projet
-    if user.role.name in ("CEO", "DA"):
+    if user_can(user, "chat.manage"):
         return True
 
     # CM : vérifier qu'il est assigné à une activité du projet
@@ -315,7 +315,7 @@ def delete_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message introuvable")
 
     is_author = message.user_id == current_user.id
-    is_admin = current_user.role.name in ("CEO", "DA")
+    is_admin = user_can(current_user, "chat.manage")
 
     if not (is_author or is_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé")

@@ -70,13 +70,20 @@ def test_finance_balance_partial_payments(client):
         "services": [{"service_id": sid, "agreed_amount": "500"}],
     }).json()
     ps = p["project_services"][0]["id"]
-    rev = client.post("/api/finance/revenues", headers=h, json={"project_service_id": ps, "amount": "500"}).json()
+    # Les écritures de finance sont réservées au rôle comptable (jamais au CEO)
+    hf = auth(client, "compta@kimia.example.com")
+    assert client.post("/api/finance/revenues", headers=h, json={"project_service_id": ps, "amount": "500"}).status_code == 403
+    rev = client.post("/api/finance/revenues", headers=hf, json={"project_service_id": ps, "amount": "500"}).json()
     for amt in ("300", "200"):
-        assert client.post("/api/finance/payments", headers=h, json={
+        assert client.post("/api/finance/payments", headers=hf, json={
             "revenue_id": rev["id"], "amount": amt, "paid_at": "2026-09-01T10:00:00Z"}).status_code == 201
-    client.post("/api/finance/remunerations", headers=h, json={"project_service_id": ps, "user_id": 1, "amount": "150"})
+    assert client.post("/api/finance/payments", headers=h, json={
+        "revenue_id": rev["id"], "amount": "1", "paid_at": "2026-09-01T10:00:00Z"}).status_code == 403
+    client.post("/api/finance/remunerations", headers=hf, json={"project_service_id": ps, "user_id": 1, "amount": "150"})
+    # Le CEO garde la lecture complète
     b = client.get(f"/api/finance/project-services/{ps}/balance", headers=h).json()
     assert float(b["total_paid"]) == 500 and float(b["remaining"]) == 0 and float(b["total_remunerated"]) == 150
+    assert client.get(f"/api/finance/project-services/{ps}/detail", headers=auth(client, "cm@kimia.example.com")).status_code == 403
 
 
 def test_cm_only_edits_assigned_activity(client):
@@ -96,7 +103,7 @@ def test_cm_only_edits_assigned_activity(client):
 def test_security_endpoints_ceo_only(client):
     login(client, password="bad")
     h = auth(client)
-    ev = client.get("/api/security/events", headers=h).json()
+    ev = client.get("/api/security/events", headers=h).json()["items"]  # réponse paginée
     assert any(e["success"] is False for e in ev)
     assert client.get("/api/security/events", headers=auth(client, "cm@kimia.example.com")).status_code == 403
     assert client.get("/api/users/team", headers=auth(client, "cm@kimia.example.com")).status_code == 403

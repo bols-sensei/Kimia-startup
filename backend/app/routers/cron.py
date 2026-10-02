@@ -6,6 +6,8 @@ une fois par jour.
 
 from datetime import datetime, timedelta, timezone
 
+import hmac
+
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,8 @@ def check_deadlines(
     Vérifie les activités dont l'échéance est demain (J-1)
     et notifie les personnes assignées.
     """
-    if x_cron_secret != settings.secret_key:
+    expected = settings.cron_secret or settings.secret_key   # repli dev uniquement
+    if not x_cron_secret or not hmac.compare_digest(x_cron_secret.encode(), expected.encode()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Non autorisé")
 
     now = datetime.now(timezone.utc)

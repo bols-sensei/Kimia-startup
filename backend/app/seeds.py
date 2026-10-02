@@ -28,7 +28,11 @@ from app.models import (
 # --------------------------------------------------------------------------- #
 # Rôles et permissions
 # --------------------------------------------------------------------------- #
-ROLES = ["CEO", "DA", "CM"]
+from app.core.access import (
+    ACCOUNTANT_PERMISSIONS, ACCOUNTANT_ROLE, CASHIER_PERMISSIONS, CASHIER_ROLE, PERMISSION_CATALOG,
+)
+
+ROLES = ["CEO", "DA", "CM", CASHIER_ROLE, ACCOUNTANT_ROLE]
 
 PERMISSIONS_BY_ROLE = {
     "CEO": ["*"],
@@ -45,6 +49,7 @@ PERMISSIONS_BY_ROLE = {
         "team.view", "team.skills",
         "documents.view", "documents.upload", "documents.delete",
         "notifications.view",
+        "chat.manage",
     ],
     "CM": [
         "dashboard.view",
@@ -55,6 +60,9 @@ PERMISSIONS_BY_ROLE = {
         "documents.view", "documents.upload",
         "notifications.view",
     ],
+    # Rôle prêt pour la personne chargée de la caisse (aucun compte créé ici).
+    CASHIER_ROLE: CASHIER_PERMISSIONS,
+    ACCOUNTANT_ROLE: ACCOUNTANT_PERMISSIONS,
 }
 
 
@@ -816,6 +824,9 @@ def run() -> None:
                         role_id=role_objs[role_name].id,
                         permission_id=perm.id,
                     ))
+        # Catalogue complet : l'UI de gestion des rôles liste toutes les permissions
+        for code, (_module, desc) in PERMISSION_CATALOG.items():
+            _get_or_create(db, Permission, code=code, defaults={"description": desc})
         db.flush()
 
         # ------------------------------------------------------------------ #
@@ -1005,7 +1016,7 @@ def run() -> None:
 
         db.commit()
         print("✅ Seed terminé :")
-        print("   • rôles (CEO, DA, CM) et permissions")
+        print("   • rôles (CEO, DA, CM, CAISSIER, COMPTABLE) et permissions")
         print("   • postes (8) avec leurs compétences typiques")
         print(f"   • compétences ({len(SKILLS)})")
         print(f"   • catégories ({len(CATEGORIES)})")

@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.access import has_permission
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models import Role, RolePermission, User
@@ -52,6 +53,10 @@ def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Compte désactivé")
 
+    # Jeton révoqué (mot de passe changé/réinitialisé depuis son émission)
+    if int(payload.get("tv", 0)) != user.token_version:
+        raise credentials_error
+
     return user
 
 
@@ -84,18 +89,17 @@ def require_permission(*required_codes: str):
     Usage : Depends(require_permission("finance.view"))
 
     L'utilisateur doit posséder TOUTES les permissions listées.
-    Le CEO possède implicitement toutes les permissions (via `*`).
+    Le CEO possède implicitement toutes les permissions (via `*`), à l'exception
+    des écritures de caisse (cash.create/cancel/close/reconcile).
     """
 
     def checker(current_user: User = Depends(get_current_user)) -> User:
         # Récupérer les codes de permissions du rôle
         codes = {rp.permission.code for rp in current_user.role.role_permissions}
 
-        # Wildcard CEO : "*" donne tous les droits
-        if "*" in codes:
-            return current_user
-
-        missing = [c for c in required_codes if c not in codes]
+        # Wildcard CEO : "*" donne tous les droits SAUF les écritures sensibles
+        # de la caisse (voir app/core/access.py).
+        missing = [c for c in required_codes if not has_permission(codes, c)]
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -104,6 +108,12 @@ def require_permission(*required_codes: str):
         return current_user
 
     return checker
+
+
+def user_can(user: User, code: str) -> bool:
+    """Vrai si l'utilisateur possède la permission (joker restreint inclus).
+    À utiliser dans les handlers à la place de `user.role.name == "..."`."""
+    return has_permission({rp.permission.code for rp in user.role.role_permissions}, code)
 
 
 def require_any_permission(*required_codes: str):
@@ -116,10 +126,7 @@ def require_any_permission(*required_codes: str):
     def checker(current_user: User = Depends(get_current_user)) -> User:
         codes = {rp.permission.code for rp in current_user.role.role_permissions}
 
-        if "*" in codes:
-            return current_user
-
-        if not any(c in codes for c in required_codes):
+        if not any(has_permission(codes, c) for c in required_codes):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission requise : une de {', '.join(required_codes)}",
@@ -127,3 +134,19 @@ def require_any_permission(*required_codes: str):
         return current_user
 
     return checker
+
+
+def require_dev_internal(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Réservé aux « dev internes » : permission `dev.tools.use` ET appartenance
+    à l'équipe dev au niveau INTERNAL. Un simple membre dev n'accède pas aux
+    outils internes tant que le CEO ne l'a pas décidé.
+    """
+
+    codes = {rp.permission.code for rp in current_user.role.role_permissions}
+    if not has_permission(codes, "dev.tools.use"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission manquante : dev.tools.use")
+    membership = current_user.dev_membership
+    if membership is None or membership.level != "INTERNAL":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Réservé aux développeurs internes")
+    return current_user

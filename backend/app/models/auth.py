@@ -35,6 +35,10 @@ class OwnershipStatus(str, enum.Enum):
     COLLABORATOR = "COLLABORATOR"
 
 
+# Statut professionnel (distinct de is_active, qui gouverne l'accès au compte).
+EMPLOYMENT_STATUSES = ("ACTIVE", "ABSENT", "LEAVE", "SUSPENDED", "LEFT")
+
+
 # --------------------------------------------------------------------------- #
 # Rôles, permissions
 # --------------------------------------------------------------------------- #
@@ -168,6 +172,11 @@ class User(Base):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Incrémenté à chaque changement/réinitialisation de mot de passe : révoque les jetons.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    employment_status: Mapped[str] = mapped_column(
+        String(20), default="ACTIVE", server_default="ACTIVE", nullable=False
+    )
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -183,6 +192,10 @@ class User(Base):
     )
     user_skills: Mapped[list["UserSkill"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    dev_membership: Mapped["DevMembership | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan",
+        foreign_keys="DevMembership.user_id",
     )
     # Chat : relations inverses
     channel_members: Mapped[list["ChannelMember"]] = relationship(
@@ -276,4 +289,18 @@ class AuditLog(Base):
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
     old_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     new_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    """Lien de réinitialisation à usage unique ; seule l'empreinte SHA-256 est stockée."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

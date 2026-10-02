@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.core.security import check_password_strength
 
 from app.models.auth import OwnershipStatus
 
@@ -72,6 +75,11 @@ class UserPositionRead(BaseModel):
 
 
 class UserCreate(BaseModel):
+    @field_validator("password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return check_password_strength(v)
+
     name: str
     email: EmailStr
     phone: str
@@ -89,6 +97,7 @@ class UserUpdate(BaseModel):
     role_id: int | None = None
     ownership_status: OwnershipStatus | None = None
     is_active: bool | None = None
+    employment_status: Literal["ACTIVE", "ABSENT", "LEAVE", "SUSPENDED", "LEFT"] | None = None
     position_ids: list[int] | None = None
     primary_position_id: int | None = None
 
@@ -104,6 +113,7 @@ class UserRead(BaseModel):
     skills: list[SkillRead] = []
     ownership_status: OwnershipStatus
     is_active: bool
+    employment_status: str = "ACTIVE"
     locked_until: datetime | None = None
     created_at: datetime
     permissions: list[str] = []
@@ -135,3 +145,38 @@ class PasswordChange(BaseModel):
 
 class PasswordReset(BaseModel):
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return check_password_strength(v)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return check_password_strength(v)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return check_password_strength(v)
+
+
+class ResetLinkRead(BaseModel):
+    token: str
+    expires_at: datetime
+    path: str

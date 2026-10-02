@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.deps import require_roles
+from app.core.deps import require_permission
 from app.database import get_db
 from app.models import Payment, ProjectService, Remuneration, Revenue, User
 from app.schemas.finance import (
@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.post("/revenues", response_model=RevenueRead, status_code=status.HTTP_201_CREATED)
 def create_revenue(
-    payload: RevenueCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))
+    payload: RevenueCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("finance.manage"))
 ):
     if db.get(ProjectService, payload.project_service_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prestation projet introuvable")
@@ -35,7 +35,7 @@ def create_revenue(
 
 @router.post("/payments", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
 def create_payment(
-    payload: PaymentCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))
+    payload: PaymentCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("finance.manage"))
 ):
     if db.get(Revenue, payload.revenue_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Revenu introuvable")
@@ -48,7 +48,7 @@ def create_payment(
 
 @router.post("/remunerations", response_model=RemunerationRead, status_code=status.HTTP_201_CREATED)
 def create_remuneration(
-    payload: RemunerationCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))
+    payload: RemunerationCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("finance.manage"))
 ):
     if db.get(ProjectService, payload.project_service_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prestation projet introuvable")
@@ -61,7 +61,7 @@ def create_remuneration(
 
 @router.get("/project-services/{project_service_id}/detail", response_model=FinanceDetail)
 def get_detail(
-    project_service_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))
+    project_service_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("finance.view"))
 ):
     balance = get_balance(project_service_id, db, _)
     revenues = db.query(Revenue).filter(Revenue.project_service_id == project_service_id).all()
@@ -75,7 +75,7 @@ def get_detail(
 
 @router.get("/project-services/{project_service_id}/balance", response_model=RevenueBalance)
 def get_balance(
-    project_service_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))
+    project_service_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("finance.view"))
 ):
     project_service = db.get(ProjectService, project_service_id)
     if project_service is None:
@@ -84,7 +84,7 @@ def get_balance(
     revenues = db.query(Revenue).filter(Revenue.project_service_id == project_service_id).all()
     total_paid = Decimal("0")
     for revenue in revenues:
-        for payment in db.query(Payment).filter(Payment.revenue_id == revenue.id):
+        for payment in db.query(Payment).filter(Payment.revenue_id == revenue.id, Payment.voided_at.is_(None)):
             total_paid += payment.amount
 
     remunerations = (

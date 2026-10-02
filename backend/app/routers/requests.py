@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import get_current_user, require_permission
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import Notification, Request, RequestStatusHistory, User
 from app.schemas.workflow import RequestRead, RequestStatusHistoryRead, RequestStatusUpdate
 from datetime import datetime, timezone
 
-from app.core.deps import get_current_user, require_roles
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import (
@@ -37,7 +36,7 @@ ALLOWED_TRANSITIONS = {
 def list_requests(
     status_filter: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("requests.view")),
 ):
     query = db.query(Request)
     if status_filter:
@@ -47,7 +46,7 @@ def list_requests(
 
 @router.get("/{request_id}", response_model=RequestRead)
 def get_request(
-    request_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO", "DA"))
+    request_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.view"))
 ):
     demande = db.get(Request, request_id)
     if demande is None:
@@ -57,7 +56,7 @@ def get_request(
 
 @router.get("/{request_id}/history", response_model=list[RequestStatusHistoryRead])
 def get_request_history(
-    request_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO", "DA"))
+    request_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.view"))
 ):
     return (
         db.query(RequestStatusHistory)
@@ -72,7 +71,7 @@ def update_request_status(
     request_id: int,
     payload: RequestStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA")),
+    current_user: User = Depends(require_permission("requests.manage")),
 ):
     demande = db.get(Request, request_id)
     if demande is None:
@@ -111,7 +110,7 @@ def create_project_from_request(
     request_id: int,
     payload: RequestCreateProject,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA")),
+    current_user: User = Depends(require_permission("requests.manage")),
 ):
     """
     Transforme une demande CONFIRMEE en projet.
@@ -210,7 +209,7 @@ def update_request_details(
     request_id: int,
     payload: RequestUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("requests.manage")),
 ):
     """
     Modifier les détails d'une demande (prix, date, lieu, notes).

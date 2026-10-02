@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, selectinload
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import get_current_user, require_any_permission, require_permission, user_can
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import (
@@ -39,13 +39,13 @@ def list_activities(
     project_id: int | None = None,
     mine: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_any_permission("activities.view", "activities.view_assigned")),
 ):
     query = db.query(Activity)
     if project_id is not None:
         query = query.filter(Activity.project_id == project_id)
     # CM : toujours limité à ses activités ; CEO/DA peuvent demander leur planning perso (mine=true).
-    if current_user.role.name == "CM" or mine:
+    if not user_can(current_user, "activities.view") or mine:
         query = query.join(Activity.assignments).filter(
             ActivityAssignment.user_id == current_user.id
         )
@@ -56,7 +56,7 @@ def list_activities(
 def get_activity(
     activity_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA", "CM")),
+    _: User = Depends(require_any_permission("activities.view", "activities.view_assigned")),
 ):
     activity = (
         db.query(Activity)
@@ -73,7 +73,7 @@ def get_activity(
 def create_activity(
     payload: ActivityCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("activities.manage")),
 ):
     activity = Activity(**payload.model_dump())
     db.add(activity)
@@ -88,14 +88,14 @@ def update_activity(
     activity_id: int,
     payload: ActivityUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_any_permission("activities.manage", "activities.complete")),
 ):
     activity = db.get(Activity, activity_id)
     if activity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activité introuvable")
 
     # CM : ne peut modifier que les activités qui lui sont assignées (§18).
-    if current_user.role.name == "CM":
+    if not user_can(current_user, "activities.manage"):
         assigned_user_ids = {a.user_id for a in activity.assignments}
         if current_user.id not in assigned_user_ids:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Activité non assignée")
@@ -113,7 +113,7 @@ def update_activity(
 
 @router.get("/{activity_id}/suggested-users", response_model=list[int])
 def suggest_users(
-    activity_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("CEO", "DA"))
+    activity_id: int, db: Session = Depends(get_db), _: User = Depends(require_any_permission("activities.manage", "activities.assign"))
 ):
     """Kimia suggère, CEO/DA valide — jamais d'auto-affectation (§24)."""
     activity = db.get(Activity, activity_id)
@@ -130,7 +130,7 @@ def assign_user(
     activity_id: int,
     payload: ActivityAssignmentCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("activities.assign")),
 ):
     activity = db.get(Activity, activity_id)
     if activity is None:
@@ -168,7 +168,7 @@ def toggle_checklist_item(
     item_id: int,
     is_done: bool,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_any_permission("activities.manage", "activities.complete")),
 ):
     item = db.get(ActivityChecklist, item_id)
     if item is None or item.activity_id != activity_id:

@@ -9,7 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_roles
+from app.core.uploads import IMAGE_TYPES, sniff_ok
+from app.core.deps import require_permission
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import PortfolioItem, User
@@ -30,7 +31,7 @@ MAX_IMAGE_MB = 10
 @router.get("", response_model=list[PortfolioItemRead])
 def list_items(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("portfolio.view")),
 ):
     return (
         db.query(PortfolioItem)
@@ -43,7 +44,7 @@ def list_items(
 def create_item(
     payload: PortfolioItemCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("portfolio.manage")),
 ):
     item = PortfolioItem(**payload.model_dump())
     db.add(item)
@@ -58,7 +59,7 @@ def update_item(
     item_id: int,
     payload: PortfolioItemUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("portfolio.manage")),
 ):
     item = db.get(PortfolioItem, item_id)
     if item is None:
@@ -78,7 +79,7 @@ def update_item(
 def delete_item(
     item_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("portfolio.manage")),
 ):
     item = db.get(PortfolioItem, item_id)
     if item is None:
@@ -98,7 +99,7 @@ def delete_item(
 @router.post("/upload", response_model=dict)
 async def upload_image(
     file: UploadFile = File(...),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("portfolio.manage")),
 ):
     """Upload d'une image de réalisation. Retourne le chemin public."""
     contents = await file.read()
@@ -108,14 +109,18 @@ async def upload_image(
             detail=f"Image trop volumineuse (max {MAX_IMAGE_MB} Mo)",
         )
 
-    allowed = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
-    if file.content_type not in allowed:
+    ext = IMAGE_TYPES.get(file.content_type or "")
+    if ext is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Format d'image non supporté (JPEG, PNG, WebP, GIF, SVG)",
+            detail="Format d'image non supporté (JPEG, PNG, WebP, GIF)",
+        )
+    if not sniff_ok(ext, contents[:16]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le contenu ne correspond pas au format déclaré",
         )
 
-    ext = Path(file.filename or "image").suffix or ".jpg"
     stored_name = f"{uuid.uuid4().hex}{ext}"
     dest_path = STORAGE_ROOT / stored_name
 

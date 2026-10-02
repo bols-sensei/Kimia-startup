@@ -48,6 +48,42 @@ def notify(
     return notif
 
 
+def notify_permission_holders(
+    db: Session,
+    permission: str,
+    *,
+    notif_type: str,
+    title: str,
+    message: str,
+    project_id: int | None = None,
+    activity_id: int | None = None,
+    exclude_user_id: int | None = None,
+) -> list[Notification]:
+    """Notifie tous les comptes actifs dont le rôle accorde `permission` (joker inclus)."""
+    from sqlalchemy.orm import selectinload
+
+    from app.core.access import has_permission
+    from app.models import Role, RolePermission
+
+    users = (
+        db.query(User)
+        .options(selectinload(User.role).selectinload(Role.role_permissions).selectinload(RolePermission.permission))
+        .filter(User.is_active.is_(True), ~User.email.like("deleted_%"))
+        .all()
+    )
+    created = []
+    for user in users:
+        if exclude_user_id and user.id == exclude_user_id:
+            continue
+        if not has_permission(user.role.permission_codes, permission):
+            continue
+        created.append(notify(
+            db, user_id=user.id, notif_type=notif_type, title=title, message=message,
+            project_id=project_id, activity_id=activity_id,
+        ))
+    return created
+
+
 def notify_staff(
     db: Session,
     *,
@@ -58,30 +94,8 @@ def notify_staff(
     activity_id: int | None = None,
     exclude_user_id: int | None = None,
 ) -> list[Notification]:
-    """Notifie tous les CEO et DA (sauf exclude_user_id s'il est fourni)."""
-    from app.models import Role
-
-    roles = db.query(Role).filter(Role.name.in_(["CEO", "DA"])).all()
-    role_ids = [r.id for r in roles]
-
-    staff = db.query(User).filter(
-        User.role_id.in_(role_ids),
-        User.is_active.is_(True),
-    ).all()
-
-    created = []
-    for user in staff:
-        if exclude_user_id and user.id == exclude_user_id:
-            continue
-        notif = notify(
-            db,
-            user_id=user.id,
-            notif_type=notif_type,
-            title=title,
-            message=message,
-            project_id=project_id,
-            activity_id=activity_id,
-        )
-        created.append(notif)
-
-    return created  
+    """Notifie l'équipe qui traite les demandes (permission requests.manage), et non plus des rôles nommés."""
+    return notify_permission_holders(
+        db, "requests.manage", notif_type=notif_type, title=title, message=message,
+        project_id=project_id, activity_id=activity_id, exclude_user_id=exclude_user_id,
+    )

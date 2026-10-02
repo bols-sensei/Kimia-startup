@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, selectinload
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.deps import require_roles
+from app.core.deps import require_any_permission, require_permission, user_can
 from app.core.ws_manager import manager
 
 from app.database import get_db
@@ -16,12 +16,12 @@ router = APIRouter()
 def list_projects(
     responsible_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_any_permission("projects.view", "projects.view_assigned")),
 ):
     query = db.query(Project)
     # CM : uniquement les projets où il est assigné à au moins une activité
     # (§18 : pas de liste globale des clients/projets pour ce rôle).
-    if current_user.role.name == "CM":
+    if not user_can(current_user, "projects.view"):
         query = (
             query.join(Activity, Activity.project_id == Project.id)
             .join(ActivityAssignment, ActivityAssignment.activity_id == Activity.id)
@@ -37,7 +37,7 @@ def list_projects(
 def get_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA", "CM")),
+    _: User = Depends(require_any_permission("projects.view", "projects.view_assigned")),
 ):
     project = (
         db.query(Project)
@@ -54,7 +54,7 @@ def get_project(
 def create_project(
     payload: ProjectCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("projects.manage")),
 ):
     project = create_project_service(db, payload)
     
@@ -75,7 +75,7 @@ def update_project(
     project_id: int,
     payload: ProjectUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA")),
+    _: User = Depends(require_permission("projects.manage")),
 ):
     project = db.get(Project, project_id)
     if project is None:

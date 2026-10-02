@@ -8,6 +8,7 @@ soient configurés — indispensable pour Alembic --autogenerate.
 from app.models.auth import (  # noqa: F401
     AuditLog,
     OwnershipStatus,
+    PasswordResetToken,
     Permission,
     Position,
     PositionSkill,
@@ -28,6 +29,10 @@ from app.models.business import (  # noqa: F401
     ServiceEventType,
     ServiceFormField,
 )
+from app.models.cash import (  # noqa: F401
+    CashClosing,
+    CashTransaction,
+)
 from app.models.chat import (  # noqa: F401
     Channel,
     ChannelMember,
@@ -42,6 +47,7 @@ from app.models.content import (  # noqa: F401
     PublicationPlatform,
     PublicationStatus,
 )
+from app.models.dev import DevMembership  # noqa: F401
 from app.models.finance import (  # noqa: F401
     Payment,
     Remuneration,

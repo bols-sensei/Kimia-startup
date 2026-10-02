@@ -35,6 +35,8 @@ class PaymentRead(BaseModel):
     paid_at: datetime
     method: str | None
     notes: str | None
+    cash_transaction_id: int | None = None
+    voided_at: datetime | None = None
 
 
 class RemunerationCreate(BaseModel):

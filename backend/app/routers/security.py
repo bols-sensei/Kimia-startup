@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_roles
+from app.core.deps import require_permission
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import SecurityEvent, User
@@ -72,7 +72,7 @@ def list_events(
     date_from: str | None = None,
     date_to: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO")),
+    _: User = Depends(require_permission("security.view")),
 ):
     """Liste paginée des événements avec filtres."""
     query = db.query(SecurityEvent)
@@ -118,7 +118,7 @@ def list_events(
 
 
 @router.get("/locked-accounts", response_model=list[LockedAccountRead])
-def locked_accounts(db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))):
+def locked_accounts(db: Session = Depends(get_db), _: User = Depends(require_permission("security.view"))):
     now = datetime.now(timezone.utc)
     users = db.query(User).filter(User.locked_until.isnot(None)).all()
     return [
@@ -131,7 +131,7 @@ def locked_accounts(db: Session = Depends(get_db), _: User = Depends(require_rol
 # Sessions actives (via WebSocket)
 # --------------------------------------------------------------------------- #
 @router.get("/active-sessions", response_model=list[ActiveSessionRead])
-def active_sessions(db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))):
+def active_sessions(db: Session = Depends(get_db), _: User = Depends(require_permission("security.view"))):
     """Utilisateurs actuellement connectés via WebSocket."""
     result = []
     for user_id, conns in manager.active.items():
@@ -154,7 +154,7 @@ def active_sessions(db: Session = Depends(get_db), _: User = Depends(require_rol
 
 
 @router.post("/active-sessions/{user_id}/disconnect", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_user(user_id: int, _: User = Depends(require_roles("CEO"))):
+async def disconnect_user(user_id: int, _: User = Depends(require_permission("security.manage"))):
     """Ferme toutes les WebSockets d'un utilisateur (déconnexion forcée)."""
     conns = manager.active.get(user_id, [])
     for ws in list(conns):
@@ -169,7 +169,7 @@ async def disconnect_user(user_id: int, _: User = Depends(require_roles("CEO")))
 # Statistiques (pour le graphique)
 # --------------------------------------------------------------------------- #
 @router.get("/stats", response_model=SecurityStats)
-def security_stats(db: Session = Depends(get_db), _: User = Depends(require_roles("CEO"))):
+def security_stats(db: Session = Depends(get_db), _: User = Depends(require_permission("security.view"))):
     """Statistiques globales + évolution journalière sur 7 jours."""
     total_events = db.query(SecurityEvent).count()
     total_success = db.query(SecurityEvent).filter(SecurityEvent.success.is_(True)).count()

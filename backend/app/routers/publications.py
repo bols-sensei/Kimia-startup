@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, selectinload
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.notifications import notify_staff
-from app.core.deps import require_roles
+from app.core.deps import require_any_permission, require_permission, user_can
 from app.core.ws_manager import manager
 from app.database import get_db
 from app.models import Platform, Publication, PublicationPlatform, User
@@ -27,7 +27,7 @@ def _sync_platforms(db: Session, publication: Publication, platform_ids: list[in
 
 
 @router.get("/platforms", response_model=list[PlatformRead])
-def list_platforms(db: Session = Depends(get_db), _: User = Depends(require_roles("CEO", "DA", "CM"))):
+def list_platforms(db: Session = Depends(get_db), _: User = Depends(require_permission("publications.view"))):
     return db.query(Platform).order_by(Platform.id).all()
 
 
@@ -35,7 +35,7 @@ def list_platforms(db: Session = Depends(get_db), _: User = Depends(require_role
 def list_publications(
     project_id: int | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("CEO", "DA", "CM")),
+    _: User = Depends(require_permission("publications.view")),
 ):
     query = db.query(Publication)
     if project_id is not None:
@@ -47,7 +47,7 @@ def list_publications(
 def create_publication(
     payload: PublicationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_permission("publications.create")),
 ):
     data = payload.model_dump(exclude={"platform_ids"})
     publication = Publication(**data, created_by=current_user.id)
@@ -65,7 +65,7 @@ def update_publication(
     publication_id: int,
     payload: PublicationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("CEO", "DA", "CM")),
+    current_user: User = Depends(require_any_permission("publications.create", "publications.submit", "publications.validate")),
 ):
     publication = db.get(Publication, publication_id)
     if publication is None:
@@ -73,7 +73,7 @@ def update_publication(
 
     if payload.status is not None:
         target = payload.status.value
-        is_cm = current_user.role.name == "CM"
+        is_cm = not user_can(current_user, "publications.validate")
         if is_cm and target not in CM_ALLOWED_TARGETS:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Statut réservé à CEO/DA")
         if not is_cm and target not in VALIDATOR_ALLOWED_TARGETS and target not in CM_ALLOWED_TARGETS:

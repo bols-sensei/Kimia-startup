@@ -27,7 +27,8 @@ from app.core.security import hash_password
 from app.database import Base, get_db
 from app.main import app
 from app.models import (
-    ActivityTemplate, Category, ChecklistTemplateItem, FormField, Role, Service, ServiceFormField, Skill, User,
+    ActivityTemplate, Category, ChecklistTemplateItem, FormField, Permission, Role, RolePermission, Service,
+    ServiceFormField, Skill, User,
 )
 
 
@@ -38,12 +39,27 @@ def db():
     Session = sessionmaker(bind=engine, autoflush=False)
     session = Session()
 
-    ceo_role, da_role, cm_role = Role(name="CEO"), Role(name="DA"), Role(name="CM")
-    session.add_all([ceo_role, da_role, cm_role])
+    # Rôles et permissions identiques à la production (source : app.seeds)
+    from app.seeds import PERMISSIONS_BY_ROLE
+    roles, perms = {}, {}
+    for role_name in ("CEO", "DA", "CM", "COMPTABLE"):
+        roles[role_name] = Role(name=role_name)
+        session.add(roles[role_name])
     session.flush()
+    for role_name, codes in PERMISSIONS_BY_ROLE.items():
+        if role_name not in roles:
+            continue
+        for code in codes:
+            if code not in perms:
+                perms[code] = Permission(code=code)
+                session.add(perms[code])
+                session.flush()
+            session.add(RolePermission(role_id=roles[role_name].id, permission_id=perms[code].id))
+    ceo_role, da_role, cm_role, acc_role = roles["CEO"], roles["DA"], roles["CM"], roles["COMPTABLE"]
     session.add_all([
         User(name="Ruben", email="ceo@kimia.example.com", password_hash=hash_password("secret123"), role_id=ceo_role.id),
         User(name="CM", email="cm@kimia.example.com", password_hash=hash_password("secret123"), role_id=cm_role.id),
+        User(name="Comptable", email="compta@kimia.example.com", password_hash=hash_password("secret123"), role_id=acc_role.id),
     ])
     cat = Category(name="Photographie")
     skill = Skill(name="Photography")

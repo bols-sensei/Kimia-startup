@@ -1,7 +1,45 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Env
 .env
-storage/
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Storage
+backend/storage/documents/*
+backend/storage/portfolio/*
+!backend/storage/documents/.gitkeep
+!backend/storage/portfolio/.gitkeep
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Base locale
 *.db
+*.sqlite3

@@ -1,6 +1,7 @@
 # Versions minimales réellement testées (septembre 2026) ; les versions plus récentes compatibles sont acceptées.
 fastapi
 uvicorn[standard]
+gunicorn
 sqlalchemy
 alembic
 psycopg2-binary

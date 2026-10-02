@@ -41,6 +41,12 @@ class Payment(Base):
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     method: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Paiement généré par un encaissement de caisse (rapprochement automatique).
+    cash_transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cash_transactions.id", ondelete="SET NULL"), unique=True, nullable=True
+    )
+    # Paiement annulé (jamais supprimé) : exclu des soldes, conservé pour l'historique.
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     revenue: Mapped["Revenue"] = relationship(back_populates="payments")
 

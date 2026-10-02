@@ -1,14 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import settings
+from app.core.access import holds_sensitive_write
+from app.core.audit import write_audit
+from app.core.cash_guard import assert_cash_operator_limit
 from app.core.deps import require_permission
-from app.core.security import hash_password
+from app.core.notifications import notify
+from app.core.security import hash_password, new_reset_token
 from app.database import get_db
 from app.models import (
+    PasswordResetToken,
     Position,
     PositionSkill,
     Role,
     RolePermission,
+    SecurityEvent,
     Skill,
     User,
     UserPosition,
@@ -16,6 +26,7 @@ from app.models import (
 )
 from app.schemas.auth import (
     PasswordReset,
+    ResetLinkRead,
     RoleRead,
     SkillRead,
     UserCreate,
@@ -127,21 +138,29 @@ def list_users(
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate,
+    response: Response,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("team.manage")),
+    current_user: User = Depends(require_permission("team.manage")),
 ):
     """Créer un membre (CEO uniquement)."""
     if db.query(User).filter(User.email == payload.email).one_or_none():
         raise HTTPException(status_code=409, detail="Email déjà utilisé")
 
-    if db.get(Role, payload.role_id) is None:
+    role = db.get(Role, payload.role_id)
+    if role is None:
         raise HTTPException(status_code=400, detail=f"Rôle {payload.role_id} inconnu")
+
+    # Rôle à écriture sensible (caisse/finance) : le mot de passe fourni est IGNORÉ, l'intéressé
+    # le choisit lui-même via un lien (POST /users/{id}/reset-link). Le CEO ne le connaît donc pas.
+    sensitive = holds_sensitive_write(role.permission_codes)
+    if sensitive:
+        response.headers["X-Password-Setup"] = "reset-link-required"
 
     user = User(
         name=payload.name,
         email=payload.email,
         phone=payload.phone,
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(secrets.token_urlsafe(32) if sensitive else payload.password),
         role_id=payload.role_id,
         ownership_status=payload.ownership_status,
     )
@@ -161,6 +180,9 @@ def create_user(
             raise HTTPException(status_code=400, detail=f"Compétence {skill_id} inconnue")
         db.add(UserSkill(user_id=user.id, skill_id=skill_id))
 
+    assert_cash_operator_limit(db)   # un seul compte « caisse » (rollback + 409 sinon)
+    write_audit(db, user_id=current_user.id, action="user.created", entity_type="user", entity_id=user.id,
+                new_data={"email": user.email, "role_id": user.role_id})
     db.commit()
     db.refresh(user)
     return user
@@ -174,13 +196,28 @@ def create_user(
 def update_user(
     user_id: int,
     payload: UserUpdate,
+    response: Response,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("team.manage")),
+    current_user: User = Depends(require_permission("team.manage")),
 ):
     """Modifier un membre (CEO uniquement)."""
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+
+    changes = payload.model_dump(exclude_unset=True)
+    if user.id == current_user.id and any(k in changes for k in ("role_id", "is_active", "employment_status")):
+        raise HTTPException(status_code=400, detail="Vous ne pouvez pas modifier votre propre rôle ou statut")
+    if "role_id" in changes and db.get(Role, changes["role_id"]) is None:
+        raise HTTPException(status_code=400, detail=f"Rôle {changes['role_id']} inconnu")
+    old_snapshot = {"role_id": user.role_id, "is_active": user.is_active, "employment_status": user.employment_status}
+    if "role_id" in changes and changes["role_id"] != user.role_id:
+        new_role = db.get(Role, changes["role_id"])
+        if holds_sensitive_write(new_role.permission_codes) and not holds_sensitive_write(user.role.permission_codes):
+            # Accès sensible : on rend le mot de passe inconnu du CEO et on coupe les sessions
+            user.password_hash = hash_password(secrets.token_urlsafe(32))
+            user.token_version += 1
+            response.headers["X-Password-Setup"] = "reset-link-required"
 
     # Champs simples
     simple_data = payload.model_dump(
@@ -199,7 +236,16 @@ def update_user(
             is_primary = (pos_id == payload.primary_position_id)
             db.add(UserPosition(user_id=user.id, position_id=pos_id, is_primary=is_primary))
 
+    # Un membre « parti » n'a plus accès au compte, mais son historique est conservé.
+    if user.employment_status == "LEFT":
+        user.is_active = False
+
     db.add(user)
+    db.flush()
+    assert_cash_operator_limit(db)
+    write_audit(db, user_id=current_user.id, action="user.updated", entity_type="user", entity_id=user.id,
+                old_data=old_snapshot,
+                new_data={"role_id": user.role_id, "is_active": user.is_active, "employment_status": user.employment_status})
     db.commit()
     db.refresh(user)
     return user
@@ -246,17 +292,24 @@ def reset_user_password(
     user_id: int,
     payload: PasswordReset,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("team.manage")),
+    current_user: User = Depends(require_permission("team.manage")),
 ):
-    """Le CEO génère un nouveau mot de passe pour un membre."""
+    """Le CEO définit un mot de passe pour un membre ordinaire (interdit pour les comptes caisse/finance)."""
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if holds_sensitive_write(user.role.permission_codes):
+        raise HTTPException(
+            status_code=409,
+            detail="Compte à accès sensible : utilisez le lien de réinitialisation (POST /users/{id}/reset-link)",
+        )
 
     user.password_hash = hash_password(payload.new_password)
+    user.token_version += 1
     user.failed_login_attempts = 0
     user.locked_until = None
     db.add(user)
+    write_audit(db, user_id=current_user.id, action="user.password_set_by_admin", entity_type="user", entity_id=user.id)
     db.commit()
     db.refresh(user)
 
@@ -288,6 +341,11 @@ def toggle_user_active(
 
     user.is_active = not user.is_active
     db.add(user)
+    db.flush()
+    if user.is_active:
+        assert_cash_operator_limit(db)
+    write_audit(db, user_id=current_user.id, action="user.toggle_active", entity_type="user", entity_id=user.id,
+                new_data={"is_active": user.is_active})
     db.commit()
     db.refresh(user)
 
@@ -322,8 +380,44 @@ def delete_user(
 
     # Soft delete : on désactive et on anonymise
     user.is_active = False
+    user.employment_status = "LEFT"
     user.email = f"deleted_{user.id}@kimia.local"
     user.name = f"[Supprimé] {user.name}"
 
     db.add(user)
+    write_audit(db, user_id=current_user.id, action="user.deleted", entity_type="user", entity_id=user.id)
     db.commit()
+
+# --------------------------------------------------------------------------- #
+# Lien de réinitialisation (usage unique, 30 min) : l'intéressé choisit son mot de passe
+# --------------------------------------------------------------------------- #
+@router.post("/{user_id}/reset-link", response_model=ResetLinkRead)
+def create_reset_link(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("team.manage")),
+):
+    target = db.get(User, user_id)
+    if target is None or target.email.startswith("deleted_"):
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if not target.is_active:
+        raise HTTPException(status_code=409, detail="Compte désactivé : réactivez-le avant de générer un lien")
+
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == target.id, PasswordResetToken.used_at.is_(None)
+    ).delete(synchronize_session=False)
+    raw, token_hash = new_reset_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_ttl_minutes)
+    db.add(PasswordResetToken(user_id=target.id, token_hash=token_hash, expires_at=expires_at, created_by=current_user.id))
+
+    ip = request.client.host if request.client else None
+    db.add(SecurityEvent(user_id=target.id, email=target.email, ip_address=ip, event_type="reset_link_created", success=True))
+    write_audit(db, user_id=current_user.id, action="user.reset_link_created", entity_type="user", entity_id=target.id)
+    notify(
+        db, user_id=target.id, notif_type="security.reset_link",
+        title="Lien de réinitialisation généré",
+        message="Un lien de réinitialisation de mot de passe a été généré pour votre compte. Si vous ne l'attendiez pas, prévenez le responsable.",
+    )
+    db.commit()
+    return ResetLinkRead(token=raw, expires_at=expires_at, path=f"/app/reset-password.html?token={raw}")
