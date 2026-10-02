@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Connexion — Kimia</title>
-  <meta name="theme-color" content="#0A0A0A">
+  <meta name="theme-color" content="#212521">
   <meta name="robots" content="noindex">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
@@ -36,6 +36,20 @@
         <button type="submit" class="btn btn-primary" id="submit-btn" style="width:100%">
           Se connecter
         </button>
+        <button type="button" class="btn-link" id="show-forgot">Mot de passe oublié ?</button>
+      </form>
+
+      <form class="form hidden" id="forgot-form" novalidate>
+        <p class="login-subtitle" style="margin-bottom:var(--space-4)">
+          Saisissez votre email : le responsable sera prévenu et vous enverra un lien.
+        </p>
+        <div class="field">
+          <label for="forgot-email">Email</label>
+          <input id="forgot-email" type="email" autocomplete="username" required>
+        </div>
+        <div class="login-error hidden" id="forgot-msg" role="status"></div>
+        <button type="submit" class="btn btn-primary" id="forgot-btn" style="width:100%">Envoyer la demande</button>
+        <button type="button" class="btn-link" id="back-login">← Retour à la connexion</button>
       </form>
 
       <p class="login-footer">
@@ -44,6 +58,10 @@
     </div>
   </main>
 
+  <style>
+    .btn-link{background:none;border:0;color:var(--accent-text);cursor:pointer;font:inherit;padding:.5rem 0 0;text-align:center;width:100%}
+    .btn-link:hover{text-decoration:underline}
+  </style>
   <script type="module">
     import { api, session } from "./services/api.js";
 
@@ -79,6 +97,30 @@
         btn.disabled = false;
         btn.textContent = "Se connecter";
       }
+    });
+
+    /* Mot de passe oublié : réponse volontairement identique que le compte existe ou non */
+    const toggle = (forgot) => {
+      $("#login-form").classList.toggle("hidden", forgot);
+      $("#forgot-form").classList.toggle("hidden", !forgot);
+    };
+    $("#show-forgot").onclick = () => toggle(true);
+    $("#back-login").onclick = () => toggle(false);
+    $("#forgot-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = $("#forgot-msg");
+      const btn = $("#forgot-btn");
+      const email = $("#forgot-email").value.trim();
+      if (!email) return;
+      btn.disabled = true;
+      try {
+        const r = await api.post("/api/auth/forgot-password", { email });
+        msg.textContent = r.detail;
+      } catch (ex) {
+        msg.textContent = ex.message || "Une erreur est survenue";
+      }
+      msg.classList.remove("hidden");
+      btn.disabled = false;
     });
   </script>
 </body>

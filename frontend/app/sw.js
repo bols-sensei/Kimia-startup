@@ -1,6 +1,6 @@
 /* Service Worker — précache tolérant, réseau d'abord, offline.html en fallback */
 
-const CACHE = "kimia-app-v1";
+const CACHE = "kimia-app-v2";
 
 /* Fichiers à précacher — si un fichier manque, les autres passent quand même */
 const PRECACHE = [

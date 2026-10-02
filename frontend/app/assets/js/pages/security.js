@@ -154,7 +154,7 @@ export default {
                     cls: "main-cell",
                     cell: (s) => `
                       <div style="display:flex;align-items:center;gap:10px">
-                        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#000;display:grid;place-items:center;font-weight:700;font-size:0.75rem;flex-shrink:0">
+                        <div style="width:32px;height:32px;border-radius:50%;background:var(--grad-brand);color:#fff;display:grid;place-items:center;font-weight:700;font-size:0.75rem;flex-shrink:0">
                           ${ui.initials(s.name)}
                         </div>
                         <div>

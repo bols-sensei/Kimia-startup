@@ -38,7 +38,7 @@ export default {
           cls: "main-cell",
           cell: (u) => `
             <div style="display:flex;align-items:center;gap:10px">
-              <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#000;display:grid;place-items:center;font-weight:700;font-size:0.75rem;flex-shrink:0">
+              <div style="width:36px;height:36px;border-radius:50%;background:var(--grad-brand);color:#fff;display:grid;place-items:center;font-weight:700;font-size:0.75rem;flex-shrink:0">
                 ${ui.initials(u.name)}
               </div>
               <div>
@@ -215,7 +215,7 @@ if (isCEOUser) {
               placeholder: "+243 097 146 8418",
               hint: "Utilisé pour envoyer les identifiants par WhatsApp." },
             { name: "password", label: "Mot de passe temporaire", type: "password", required: true, full: true,
-              hint: "8 caractères minimum. Le membre pourra le changer." },
+              hint: "10 caractères minimum, une lettre et un chiffre. Ignoré pour les rôles caisse et finance : le membre choisit le sien via un lien." },
             { name: "role_id", label: "Rôle", type: "select", required: true,
               options: roles.map((r) => ({ v: r.id, l: r.name })) },
             { name: "ownership_status", label: "Statut", type: "select",
@@ -227,9 +227,11 @@ if (isCEOUser) {
           values: { ownership_status: "COLLABORATOR" },
           submitLabel: "Créer le membre",
           onSubmit: async (v) => {
-            await api.post("/api/users", v);
-            toast("Membre créé. Transmettez-lui ses identifiants.");
+            const created = await api.post("/api/users", v);
+            toast("Membre créé");
             reload();
+            // Proposer directement le lien : le membre choisit son mot de passe (obligatoire pour caisse/finance)
+            setTimeout(() => generateLink(created, "Accès du nouveau membre"), 350);
           },
         });
       });
@@ -287,108 +289,57 @@ if (isCEOUser) {
     }
 
     /* ============================================================
-       Réinitialiser le mot de passe (CEO)
+       Lien de réinitialisation (CEO) — l'intéressé choisit son mot de passe
        ============================================================ */
-    const openSendPassword = (member, password) => {
-      const loginUrl = `${window.location.origin}/app/login.html`;
+    const openSendLink = (member, link, title = "Lien de réinitialisation") => {
+      const url = `${window.location.origin}${link.path}`;
+      const minutes = Math.max(1, Math.round((new Date(link.expires_at) - Date.now()) / 60000));
       const message =
         `Bonjour ${member.name.split(" ")[0]},\n\n` +
-        `Voici ton nouveau mot de passe Kimia : ${password}\n\n` +
-        `Connecte-toi : ${loginUrl}\n` +
-        `Change-le dès que possible dans "Mon profil".\n\n` +
+        `Voici ton lien pour choisir ton mot de passe Kimia (valable ${minutes} min, un seul usage) :\n${url}\n\n` +
         `— ${user.name}`;
 
       modal({
-        title: "Mot de passe réinitialisé",
+        title,
         body: `
-          <div style="text-align:center;margin-bottom:1.5rem">
-            <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-dim);color:var(--accent);display:grid;place-items:center;margin:0 auto 1rem;border:1px solid var(--accent)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-            <h3 style="font-weight:700;font-size:1.125rem;margin-bottom:0.5rem">Mot de passe réinitialisé</h3>
-            <p style="color:var(--text-2);font-size:0.875rem">Transmettez-le à <b>${esc(member.name)}</b> :</p>
-          </div>
-
-          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1.5rem;text-align:center">
-            <div style="font-size:0.75rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Mot de passe</div>
-            <div style="font-family:monospace;font-size:1.25rem;font-weight:700;color:var(--accent);user-select:all" id="pwd-display">${esc(password)}</div>
-            <button class="btn btn-secondary btn-sm" id="copy-pwd" style="margin-top:0.75rem">📋 Copier</button>
-          </div>
-
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-primary" id="send-whatsapp" style="justify-content:center">
-              📱 Envoyer par WhatsApp
-            </button>
-            <button class="btn btn-secondary" id="send-email" style="justify-content:center">
-              📧 Envoyer par Email
-            </button>
-          </div>
-        `,
-        onMount: (el, close) => {
-          el.querySelector("#copy-pwd").onclick = () => {
-            navigator.clipboard.writeText(password);
-            toast("Mot de passe copié");
-          };
-
+          <p style="color:var(--text-2);margin-bottom:1rem">
+            Transmettez ce lien à <b>${esc(member.name)}</b>. Il choisira lui-même son mot de passe ;
+            vous ne le connaîtrez pas. Le lien expire dans ${minutes} minutes et ne fonctionne qu'une fois.
+          </p>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem;word-break:break-all;font-family:monospace;font-size:.8rem;user-select:all">${esc(url)}</div>
+          <div class="notice">Cette action est tracée dans l'audit et l'intéressé en est notifié.</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:1rem">
+            <button class="btn btn-primary" id="send-whatsapp" style="justify-content:center">📱 Envoyer par WhatsApp</button>
+            <button class="btn btn-secondary" id="send-email" style="justify-content:center">📧 Envoyer par email</button>
+            <button class="btn btn-secondary" id="copy-link" style="justify-content:center">📋 Copier le lien</button>
+          </div>`,
+        onMount: (el) => {
+          el.querySelector("#copy-link").onclick = () => { navigator.clipboard.writeText(url); toast("Lien copié"); };
           el.querySelector("#send-whatsapp").onclick = () => {
-            if (!member.phone) {
-              toast("Ce membre n'a pas de numéro WhatsApp", "err");
-              return;
-            }
-            const cleanPhone = member.phone.replace(/\D/g, "");
-            const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-            window.open(url, "_blank");
+            if (!member.phone) return toast("Ce membre n'a pas de numéro WhatsApp", "err");
+            window.open(`https://wa.me/${member.phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
           };
-
           el.querySelector("#send-email").onclick = () => {
-            if (!member.email) {
-              toast("Ce membre n'a pas d'email", "err");
-              return;
-            }
-            const subject = "Nouveau mot de passe Kimia";
-            const url = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
-            window.location.href = url;
+            if (!member.email) return toast("Ce membre n'a pas d'email", "err");
+            window.location.href = `mailto:${member.email}?subject=${encodeURIComponent("Ton accès Kimia")}&body=${encodeURIComponent(message)}`;
           };
         },
       });
     };
 
+    const generateLink = async (member, title) => {
+      try {
+        const link = await api.post(`/api/users/${member.id}/reset-link`);
+        openSendLink(member, link, title);
+      } catch (err) {
+        toast(err.message || "Erreur", "err");
+      }
+    };
+
     view.querySelectorAll("[data-reset-password]").forEach((b) =>
       b.addEventListener("click", () => {
         const member = team.find((u) => u.id === +b.dataset.resetPassword);
-
-        formModal({
-          title: `Réinitialiser le mot de passe de ${member.name}`,
-          fields: [
-            { name: "new_password", label: "Nouveau mot de passe", type: "password", required: true, full: true,
-              placeholder: "8 caractères minimum" },
-            { name: "confirm_password", label: "Confirmer", type: "password", required: true, full: true },
-          ],
-          submitLabel: "Réinitialiser",
-          onSubmit: async (v) => {
-            if (v.new_password !== v.confirm_password) {
-              toast("Les mots de passe ne correspondent pas", "err");
-              return false;
-            }
-            if (v.new_password.length < 8) {
-              toast("Minimum 8 caractères", "err");
-              return false;
-            }
-
-            try {
-              await api.post(`/api/users/${member.id}/reset-password`, {
-                new_password: v.new_password,
-              });
-              // Ouvre la modale de transmission
-              setTimeout(() => openSendPassword(member, v.new_password), 300);
-            } catch (err) {
-              toast(err.message || "Erreur", "err");
-              return false;
-            }
-          },
-        });
+        generateLink(member, "Lien de réinitialisation");
       })
     );
 

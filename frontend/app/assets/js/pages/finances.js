@@ -45,10 +45,12 @@ export default {
       }
     }
 
-    return { projects, projectDetail, services, finance };
+    const me = await api.get("/api/access/me");
+    const canManage = !!me.modules.finance.manage;
+    return { projects, projectDetail, services, finance, canManage };
   },
 
-  render({ projects, projectDetail, services, finance }) {
+  render({ projects, projectDetail, services, finance, canManage }) {
     /* Aucun projet */
     if (!projects.length) {
       return pageHead("Finances") + ui.stateHTML.empty(
@@ -149,9 +151,9 @@ export default {
     /* Boutons d'action */
     const actions = `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.5rem">
-        <button class="btn btn-primary btn-sm" id="add-revenue">+ Revenu</button>
+        ${canManage ? `<button class="btn btn-primary btn-sm" id="add-revenue">+ Revenu</button>
         <button class="btn btn-secondary btn-sm" id="add-payment" ${!finance.revenues.length ? "disabled" : ""}>+ Paiement</button>
-        <button class="btn btn-secondary btn-sm" id="add-remuneration">+ Rémunération</button>
+        <button class="btn btn-secondary btn-sm" id="add-remuneration">+ Rémunération</button>` : `<span class="field-hint">Lecture seule : la saisie est réservée au rôle comptable.</span>`}
       </div>
     `;
 
