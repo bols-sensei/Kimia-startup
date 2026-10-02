@@ -1,3 +1,4 @@
-// URL de l'API. Servi par FastAPI (:8000) => même origine ; sinon http://localhost:8000.
-window.KIMIA_API = location.port === "8000" ? location.origin : "http://localhost:8000";
-window.KIMIA_CURRENCY = "USD";
+/* URL de l'API Kimia.
+   Vide = même origine (le backend sert le frontend).
+   Ne JAMAIS mettre localhost en dur : ça casse le déploiement. */
+window.KIMIA_API = "";
